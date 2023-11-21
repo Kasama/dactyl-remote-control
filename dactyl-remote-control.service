@@ -1,0 +1,10 @@
+[Unit]
+Description=Dactyl remote control
+
+[Service]
+Type=simple
+ExecStart=%h/.cargo/bin/dactyl-remote-control --vid 0x444d --pid 0x3435 watch-i3-focus omegastrikers golfit
+Restart=always
+
+[Install]
+WantedBy=default.target
