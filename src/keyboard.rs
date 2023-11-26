@@ -12,61 +12,26 @@ pub struct HidInfo {
     pub usage: u16,
 }
 
-#[derive(Debug)]
-pub enum Layers {
-    Qwerty = 0,
-    Workman = 1,
-    Sys = 2,
-    Numrow = 3,
-    Game = 5,
-    Code = 6,
-    Numpad = 7,
-    LayerSel = 14,
-    Trans = 15,
-    Unknown = 255,
-}
-
-impl From<u8> for Layers {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Self::Qwerty,
-            1 => Self::Workman,
-            2 => Self::Sys,
-            3 => Self::Numrow,
-            5 => Self::Game,
-            6 => Self::Code,
-            7 => Self::Numpad,
-            14 => Self::LayerSel,
-            15 => Self::Trans,
-            _ => Self::Unknown,
-        }
-    }
-}
-
-impl ToString for Layers {
-    fn to_string(&self) -> String {
-        format!("{:?}", self)
-    }
-}
-
 pub enum Operation {
     Bootloader,
     GetLayer,
     ChangeLayer(u8),
 }
 
+const OPERATION_BOOTLOADER: u8 = 0x42;
+const OPERATION_GET_LAYER: u8 = 0x43;
+const OPERATION_CHANGE_LAYER: u8 = 0x44;
+
 impl Operation {
     fn report(&self) -> [u8; REPORT_LENGTH] {
         let mut ret = [0; REPORT_LENGTH];
         match self {
-            Self::Bootloader => {
-                ret[0] = 0x42;
-            }
+            Self::Bootloader => ret[0] = OPERATION_BOOTLOADER,
             Self::GetLayer => {
-                ret[0] = 0x43;
+                ret[0] = OPERATION_GET_LAYER;
             }
             Self::ChangeLayer(layer) => {
-                ret[0] = 0x44;
+                ret[0] = OPERATION_CHANGE_LAYER;
                 ret[1] = *layer;
             }
         }
@@ -76,13 +41,27 @@ impl Operation {
 
 pub enum KeyboardResponse {
     None,
-    CurrentLayer(u8),
+    CurrentLayerNum(u8),
+    CurrentLayer(u8, String),
 }
+
+const KEYBOARD_RESPONSE_CURRENT_LAYER: u8 = 0x43;
+const KEYBOARD_RESPONSE_CURRENT_LAYER_NUM: u8 = 0x44;
 
 impl KeyboardResponse {
     pub fn parse_response(buffer: [u8; REPORT_LENGTH]) -> Self {
         match buffer {
-            [0x43, layer, ..] | [0x44, layer, ..] => Self::CurrentLayer(layer),
+            [KEYBOARD_RESPONSE_CURRENT_LAYER, layer, ..] => {
+                let name: String = buffer
+                    .iter()
+                    // first two bytes are the operation and layer number. Deconstructed above
+                    .skip(2)
+                    .take_while(|c| c.is_ascii())
+                    .map(|c| *c as char)
+                    .collect();
+                Self::CurrentLayer(layer, name)
+            }
+            [KEYBOARD_RESPONSE_CURRENT_LAYER_NUM, layer, ..] => Self::CurrentLayerNum(layer),
             _ => Self::None,
         }
     }

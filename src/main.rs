@@ -53,10 +53,12 @@ enum Commands {
         window_names: Vec<String>,
         #[arg(short, long, default_value = "0")]
         base_layer: u8,
-        #[arg(short, long, default_value = "5")]
+        #[arg(short, long, default_value = "4")]
         change_layer: u8,
     },
-    ChangeKeyboardLayer { layer: u8 },
+    ChangeKeyboardLayer {
+        layer: u8,
+    },
 }
 
 fn print_error<T, E: std::fmt::Debug>(r: Result<T, E>) {
@@ -79,11 +81,18 @@ async fn main() -> Result<(), anyhow::Error> {
     match app.command {
         Commands::PrintKeyboardLayer => print_error(app.print_keyboard_layer()),
         Commands::KeyboardBootloader => print_error(app.keyboard_bootloader()),
-        Commands::WatchI3Focus { ref window_names, base_layer, change_layer } => {
+        Commands::WatchI3Focus {
+            ref window_names,
+            base_layer,
+            change_layer,
+        } => {
             if window_names.is_empty() {
                 error!("No window names provided")
             } else {
-                print_error(app.watch_i3_focus(window_names, base_layer, change_layer).await)
+                print_error(
+                    app.watch_i3_focus(window_names, base_layer, change_layer)
+                        .await,
+                )
             }
         }
         Commands::ChangeKeyboardLayer { layer } => print_error(app.change_keyboard_layer(layer)),
@@ -109,7 +118,12 @@ impl App {
         })
     }
 
-    async fn watch_i3_focus(&self, window_names: &[String], base_layer: u8, change_layer: u8) -> Result<(), anyhow::Error> {
+    async fn watch_i3_focus(
+        &self,
+        window_names: &[String],
+        base_layer: u8,
+        change_layer: u8,
+    ) -> Result<(), anyhow::Error> {
         let i3 = tokio_i3ipc::I3::connect().await?;
 
         i3.subscribe_to_window_focus_events(|prev_ev, window_data| {
@@ -142,8 +156,8 @@ impl App {
 
         let response = keyboard.send_message(Operation::GetLayer)?;
 
-        if let KeyboardResponse::CurrentLayer(layer) = response {
-            println!("⌨: {}", keyboard::Layers::from(layer).to_string());
+        if let KeyboardResponse::CurrentLayer(_, name) = response {
+            println!("⌨: {}", name);
         }
 
         Ok(())
@@ -154,7 +168,7 @@ impl App {
 
         let response = keyboard.send_message(Operation::ChangeLayer(layer))?;
 
-        if let KeyboardResponse::CurrentLayer(layer) = response {
+        if let KeyboardResponse::CurrentLayerNum(layer) = response {
             println!("Current layer: {}", layer);
         }
 
