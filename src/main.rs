@@ -1,3 +1,4 @@
+mod config;
 mod i3;
 mod keyboard;
 
@@ -50,11 +51,10 @@ enum Commands {
     PrintKeyboardLayer,
     KeyboardBootloader,
     WatchI3Focus {
-        window_names: Vec<String>,
-        #[arg(short, long, default_value = "0")]
-        base_layer: u8,
-        #[arg(short, long, default_value = "4")]
-        change_layer: u8,
+        #[arg(long, default_value = "false")]
+        create_config: bool,
+        #[arg(short, long)]
+        config: Option<String>,
     },
     ChangeKeyboardLayer {
         layer: u8,
@@ -82,30 +82,23 @@ async fn main() -> Result<(), anyhow::Error> {
         Commands::PrintKeyboardLayer => print_error(app.print_keyboard_layer()),
         Commands::KeyboardBootloader => print_error(app.keyboard_bootloader()),
         Commands::WatchI3Focus {
-            ref window_names,
-            base_layer,
-            change_layer,
+            create_config,
+            ref config,
         } => {
-            if window_names.is_empty() {
-                error!("No window names provided")
+            if create_config {
+                return Ok(());
+            }
+            if let Some(config) = config {
+                let config = config::I3WatcherConfig::load_config(config)?;
+                print_error(app.watch_i3_focus(config).await)
             } else {
-                print_error(
-                    app.watch_i3_focus(window_names, base_layer, change_layer)
-                        .await,
-                )
+                error!("No window names provided")
             }
         }
         Commands::ChangeKeyboardLayer { layer } => print_error(app.change_keyboard_layer(layer)),
     };
 
     Ok(())
-}
-
-fn matches_layer_names(name: String, matches: &[String]) -> bool {
-    matches
-        .iter()
-        .map(|m| m.to_lowercase())
-        .any(|m| name.to_lowercase().contains(&m))
 }
 
 impl App {
@@ -118,12 +111,7 @@ impl App {
         })
     }
 
-    async fn watch_i3_focus(
-        &self,
-        window_names: &[String],
-        base_layer: u8,
-        change_layer: u8,
-    ) -> Result<(), anyhow::Error> {
+    async fn watch_i3_focus(&self, config: config::I3WatcherConfig) -> Result<(), anyhow::Error> {
         let i3 = tokio_i3ipc::I3::connect().await?;
 
         i3.subscribe_to_window_focus_events(|prev_ev, window_data| {
@@ -131,14 +119,20 @@ impl App {
             debug!("win: current focused node: {:?}", node);
 
             if let Some(name) = node.name {
-                if matches_layer_names(name, window_names) {
+                if let Some(entry) = config.matches_window(&name) {
+                    debug!("win: matched window: {:?}", entry);
                     let keyboard = self.connect_to_keyboard()?;
-                    keyboard.send_message(Operation::ChangeLayer(change_layer))?;
+                    entry
+                        .to_layer
+                        .map(|layer| keyboard.send_message(Operation::ChangeLayer(layer)));
                 } else if let Some(ev) = prev_ev {
                     if let Some(name) = ev.container.name {
-                        if matches_layer_names(name, window_names) {
+                        if let Some(entry) = config.matches_window(&name) {
+                            debug!("win: exited matching window: {:?}", entry);
                             let keyboard = self.connect_to_keyboard()?;
-                            keyboard.send_message(Operation::ChangeLayer(base_layer))?;
+                            entry
+                                .base_layer
+                                .map(|layer| keyboard.send_message(Operation::ChangeLayer(layer)));
                         }
                     }
                 }

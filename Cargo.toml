@@ -9,10 +9,14 @@ edition = "2021"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 clap-num = "1"
+config = { version = "0.13", features = ["yaml"] }
 hidapi = "2.4.1"
+inquire = "0.6"
 futures = "0.3"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-i3ipc = "0.16.0"
 async-trait = "0.1"
 simple_logger = "4"
+serde = { version = "1", features = ["derive"] }
+serde_with = "3.4"
