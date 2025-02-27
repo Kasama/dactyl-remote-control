@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::anyhow;
 use hidapi::HidApi;
 use log::trace;
@@ -16,11 +18,17 @@ pub enum Operation {
     Bootloader,
     GetLayer,
     ChangeLayer(u8),
+    GetLayers,
+    GetJiggler,
+    SetJiggler(bool),
 }
 
 const OPERATION_BOOTLOADER: u8 = 0x42;
 const OPERATION_GET_LAYER: u8 = 0x43;
 const OPERATION_CHANGE_LAYER: u8 = 0x44;
+const OPERATION_GET_LAYERS: u8 = 0x46;
+const OPERATION_GET_JIGGLER: u8 = 0x47;
+const OPERATION_SET_JIGGLER: u8 = 0x48;
 
 impl Operation {
     fn report(&self) -> [u8; REPORT_LENGTH] {
@@ -34,6 +42,16 @@ impl Operation {
                 ret[0] = OPERATION_CHANGE_LAYER;
                 ret[1] = *layer;
             }
+            Self::GetLayers => {
+                ret[0] = OPERATION_GET_LAYERS;
+            }
+            Self::GetJiggler => {
+                ret[0] = OPERATION_GET_JIGGLER;
+            }
+            Self::SetJiggler(value) => {
+                ret[0] = OPERATION_SET_JIGGLER;
+                ret[1] = if *value { 1 } else { 0 };
+            }
         }
         ret
     }
@@ -43,10 +61,13 @@ pub enum KeyboardResponse {
     None,
     CurrentLayerNum(u8),
     CurrentLayer(u8, String),
+    LayerNames(HashMap<u8, String>),
+    JigglerStatus(bool),
 }
 
 const KEYBOARD_RESPONSE_CURRENT_LAYER: u8 = 0x43;
 const KEYBOARD_RESPONSE_CURRENT_LAYER_NUM: u8 = 0x44;
+const KEYBOARD_RESPONSE_JIGGLER_STATUS: u8 = 0x47;
 
 impl KeyboardResponse {
     pub fn parse_response(buffer: [u8; REPORT_LENGTH]) -> Self {
@@ -62,6 +83,7 @@ impl KeyboardResponse {
                 Self::CurrentLayer(layer, name)
             }
             [KEYBOARD_RESPONSE_CURRENT_LAYER_NUM, layer, ..] => Self::CurrentLayerNum(layer),
+            [KEYBOARD_RESPONSE_JIGGLER_STATUS, status, ..] => Self::JigglerStatus(status != 0),
             _ => Self::None,
         }
     }

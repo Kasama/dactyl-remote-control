@@ -10,10 +10,10 @@ use crate::i3::I3Ext;
 
 use self::keyboard::{HidInfo, Keyboard, KeyboardResponse, Operation};
 
-// const VENDOR_ID: u16 = 0x4b41; // Kasama
-// const PRODUCT_ID: u16 = 0x504d; // Macro pad
-const VENDOR_ID: u16 = 0x444D; // Tshort
-const PRODUCT_ID: u16 = 0x3435; // Dactyl Manuform
+const VENDOR_ID: u16 = 0x4b41; // Kasama
+const PRODUCT_ID: u16 = 0x636D; // Dactyl
+// const VENDOR_ID: u16 = 0x444D; // Tshort
+// const PRODUCT_ID: u16 = 0x3435; // Dactyl Manuform
 
 const USAGE_PAGE: u16 = 0xff60; // QMK default
 const USAGE: u16 = 0x61; // QMK default
@@ -59,6 +59,8 @@ enum Commands {
     ChangeKeyboardLayer {
         layer: u8,
     },
+    EnableMouseJiggle,
+    DisableMouseJiggle,
 }
 
 fn print_error<T, E: std::fmt::Debug>(r: Result<T, E>) {
@@ -96,6 +98,8 @@ async fn main() -> Result<(), anyhow::Error> {
             }
         }
         Commands::ChangeKeyboardLayer { layer } => print_error(app.change_keyboard_layer(layer)),
+        Commands::EnableMouseJiggle => print_error(app.set_mouse_jiggle(true)),
+        Commands::DisableMouseJiggle => print_error(app.set_mouse_jiggle(false)),
     };
 
     Ok(())
@@ -149,11 +153,24 @@ impl App {
         let keyboard = self.connect_to_keyboard()?;
 
         let response = keyboard.send_message(Operation::GetLayer)?;
+        let jiggler_response = keyboard.send_message(Operation::GetJiggler)?;
+
+        let jiggler_status = if let KeyboardResponse::JigglerStatus(true) = jiggler_response {
+            "z "
+        } else {
+            ""
+        };
 
         if let KeyboardResponse::CurrentLayer(_, name) = response {
-            println!("⌨: {}", name);
+            println!("{}{}", jiggler_status, name);
         }
 
+        Ok(())
+    }
+
+    fn set_mouse_jiggle(&self, value: bool) -> Result<(), anyhow::Error> {
+        let keyboard = self.connect_to_keyboard()?;
+        keyboard.send_message(Operation::SetJiggler(value))?;
         Ok(())
     }
 

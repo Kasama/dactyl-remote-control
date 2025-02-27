@@ -1,9 +1,12 @@
 [Unit]
 Description=Dactyl remote control
+After=default.target
+Wants=default.target
 
 [Service]
 Type=simple
 ExecStart=%h/.cargo/bin/dactyl-remote-control -vvv --vid 0x4B41 --pid 0x636D watch-i3-focus --config %E/dactyl-remote-control/config.yaml
+# ExecStart=%h/.cargo/bin/dactyl-remote-control -vvv --vid 0x4d44 --pid 0x5244 watch-i3-focus --config %E/dactyl-remote-control/config.yaml
 Restart=always
 
 [Install]
