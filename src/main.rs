@@ -1,9 +1,11 @@
 mod config;
+mod hyprland;
 mod i3;
 mod keyboard;
 
 use clap::Parser;
 use clap_num::maybe_hex;
+use futures::StreamExt;
 use log::{debug, error};
 
 use crate::i3::I3Ext;
@@ -12,8 +14,8 @@ use self::keyboard::{HidInfo, Keyboard, KeyboardResponse, Operation};
 
 const VENDOR_ID: u16 = 0x4b41; // Kasama
 const PRODUCT_ID: u16 = 0x636D; // Dactyl
-// const VENDOR_ID: u16 = 0x444D; // Tshort
-// const PRODUCT_ID: u16 = 0x3435; // Dactyl Manuform
+                                // const VENDOR_ID: u16 = 0x444D; // Tshort
+                                // const PRODUCT_ID: u16 = 0x3435; // Dactyl Manuform
 
 const USAGE_PAGE: u16 = 0xff60; // QMK default
 const USAGE: u16 = 0x61; // QMK default
@@ -50,6 +52,12 @@ struct App {
 enum Commands {
     PrintKeyboardLayer,
     KeyboardBootloader,
+    WatchWindowFocus {
+        #[arg(long, default_value = "false")]
+        create_config: bool,
+        #[arg(short, long)]
+        config: Option<String>,
+    },
     WatchI3Focus {
         #[arg(long, default_value = "false")]
         create_config: bool,
@@ -83,16 +91,26 @@ async fn main() -> Result<(), anyhow::Error> {
     match app.command {
         Commands::PrintKeyboardLayer => print_error(app.print_keyboard_layer()),
         Commands::KeyboardBootloader => print_error(app.keyboard_bootloader()),
-        Commands::WatchI3Focus {
+        Commands::WatchWindowFocus {
+            create_config,
+            ref config,
+        }
+        | Commands::WatchI3Focus {
             create_config,
             ref config,
         } => {
             if create_config {
                 return Ok(());
             }
+
             if let Some(config) = config {
-                let config = config::I3WatcherConfig::load_config(config)?;
-                print_error(app.watch_i3_focus(config).await)
+                let config = config::WindowWatcherConfig::load_config(config)?;
+
+                if let Ok(hyprland_signature) = std::env::var("HYPRLAND_INSTANCE_SIGNATURE") {
+                    print_error(app.watch_hyprland_focus(&hyprland_signature, config).await)
+                } else {
+                    print_error(app.watch_i3_focus(config).await)
+                }
             } else {
                 error!("No window names provided")
             }
@@ -115,14 +133,55 @@ impl App {
         })
     }
 
-    async fn watch_i3_focus(&self, config: config::I3WatcherConfig) -> Result<(), anyhow::Error> {
+    async fn watch_hyprland_focus(
+        &self,
+        hyprland_signature: &str,
+        config: config::WindowWatcherConfig,
+    ) -> Result<(), anyhow::Error> {
+        let mut hypr = hyprland::Hyprland::connect(hyprland_signature).await?;
+
+        let mut last_matched_window = None;
+        while let Some(Ok(event)) = hypr.next().await {
+            if let hyprland::Event::ActiveWindow { class, title } = event {
+                let name = format!("{} - {}", class, title);
+                debug!("Considering window name: {:?}", name);
+                if let Some(entry) = config.matches_window(&name) {
+                    debug!("hyprland: matched window: {:?}", entry);
+                    last_matched_window = Some(entry);
+                    let keyboard = self.connect_to_keyboard()?;
+                    entry
+                        .to_layer
+                        .map(|layer| keyboard.send_message(Operation::ChangeLayer(layer)));
+                } else if let Some(entry) = last_matched_window {
+                    debug!("hyprland: exited matching window: {:?}", entry);
+                    let keyboard = self.connect_to_keyboard()?;
+                    entry
+                        .base_layer
+                        .map(|layer| keyboard.send_message(Operation::ChangeLayer(layer)));
+                    last_matched_window = None;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn watch_i3_focus(
+        &self,
+        config: config::WindowWatcherConfig,
+    ) -> Result<(), anyhow::Error> {
         let i3 = tokio_i3ipc::I3::connect().await?;
 
         i3.subscribe_to_window_focus_events(|prev_ev, window_data| {
             let node = window_data.container;
             debug!("win: current focused node: {:?}", node);
 
-            if let Some(name) = node.name {
+            if let Some(window_name) = node.name {
+                let name = window_name
+                    .chars()
+                    .filter(|c| c.is_ascii())
+                    .collect::<String>();
+                debug!("Considering window name: {:?}", name);
                 if let Some(entry) = config.matches_window(&name) {
                     debug!("win: matched window: {:?}", entry);
                     let keyboard = self.connect_to_keyboard()?;

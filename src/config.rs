@@ -4,7 +4,7 @@ use config::Config;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct I3WatcherEntry {
+pub struct WindowWatcherEntry {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_string_or_seq_string")]
     pub include: Vec<String>,
@@ -68,20 +68,20 @@ where
 }
 
 #[derive(Debug)]
-pub struct I3WatcherConfig {
-    pub entries: Vec<I3WatcherEntry>,
+pub struct WindowWatcherConfig {
+    pub entries: Vec<WindowWatcherEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct I3WatcherGlobalConfig {
+struct WindowWatcherGlobalConfig {
     exclude: Option<Vec<String>>,
     include: Option<Vec<String>>,
     base_layer: Option<u8>,
     to_layer: Option<u8>,
 }
 
-impl I3WatcherGlobalConfig {
-    fn apply_defaults(&self, mut other: I3WatcherEntry) -> I3WatcherEntry {
+impl WindowWatcherGlobalConfig {
+    fn apply_defaults(&self, mut other: WindowWatcherEntry) -> WindowWatcherEntry {
         if let Some(ref include) = self.include {
             if other.include.is_empty() {
                 other.include = include.clone();
@@ -100,19 +100,19 @@ impl I3WatcherGlobalConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct I3WatcherConfigFileStructure {
-    global: I3WatcherGlobalConfig,
-    entries: HashMap<String, I3WatcherEntry>,
+struct WindowWatcherConfigFileStructure {
+    global: WindowWatcherGlobalConfig,
+    entries: HashMap<String, WindowWatcherEntry>,
 }
 
-impl I3WatcherConfig {
+impl WindowWatcherConfig {
     pub fn load_config(config_file: &str) -> Result<Self, anyhow::Error> {
         let config = Config::builder()
             .add_source(config::File::with_name(config_file))
             .add_source(config::Environment::with_prefix("DACTYL"))
             .build()?;
 
-        let I3WatcherConfigFileStructure {
+        let WindowWatcherConfigFileStructure {
             global: defaults,
             mut entries,
         } = config.try_deserialize()?;
@@ -125,7 +125,7 @@ impl I3WatcherConfig {
         Ok(Self { entries })
     }
 
-    pub fn matches_window(&self, window_name: &str) -> Option<&I3WatcherEntry> {
+    pub fn matches_window(&self, window_name: &str) -> Option<&WindowWatcherEntry> {
         self.entries.iter().find(|entry| {
             let matches_include = entry
                 .include
@@ -144,15 +144,15 @@ impl I3WatcherConfig {
 mod test {
     #[test]
     fn test_matches_window() {
-        let config = super::I3WatcherConfig {
+        let config = super::WindowWatcherConfig {
             entries: vec![
-                super::I3WatcherEntry {
+                super::WindowWatcherEntry {
                     include: vec!["foo".to_string()],
                     exclude: vec![],
                     base_layer: None,
                     to_layer: None,
                 },
-                super::I3WatcherEntry {
+                super::WindowWatcherEntry {
                     include: vec!["baz".to_string()],
                     exclude: vec!["bin".to_string()],
                     base_layer: None,
